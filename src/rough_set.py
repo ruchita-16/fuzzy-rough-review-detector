@@ -9,27 +9,24 @@ import pandas as pd
 
 
 CONDITION_ATTRIBUTES = (
-    "promotional_keyword_count",
-    "repeated_word_ratio",
-    "exclamation_count",
+    "promotional_keyword_rate",
+    "repeated_phrase_ratio",
     "sentiment_rating_mismatch",
-    "verified_purchase_numeric",
+    "specificity_count",
 )
 
 
 def _discretize(attribute: str, value: Any) -> str:
     numeric = pd.to_numeric(pd.Series([value]), errors="coerce").iloc[0]
     number = float(numeric) if pd.notna(numeric) else 0.0
-    if attribute == "promotional_keyword_count":
-        return "low" if number <= 0 else "medium" if number <= 2 else "high"
-    if attribute == "repeated_word_ratio":
-        return "low" if number < 0.05 else "medium" if number < 0.2 else "high"
-    if attribute == "exclamation_count":
-        return "low" if number == 0 else "medium" if number <= 2 else "high"
+    if attribute == "promotional_keyword_rate":
+        return "low" if number < 0.04 else "medium" if number < 0.15 else "high"
+    if attribute == "repeated_phrase_ratio":
+        return "low" if number < 0.02 else "medium" if number < 0.15 else "high"
     if attribute == "sentiment_rating_mismatch":
         return "high" if number >= 1 else "low"
-    if attribute == "verified_purchase_numeric":
-        return "verified" if number >= 1 else "unverified"
+    if attribute == "specificity_count":
+        return "low" if number == 0 else "high"
     raise ValueError(f"Unsupported rough-set condition attribute: {attribute}")
 
 

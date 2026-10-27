@@ -21,6 +21,10 @@ NEGATIVE_WORDS = {
     "awful", "bad", "bitter", "broken", "disappointed", "leak", "messy",
     "terrible", "thin", "uncomfortable", "weak", "worse",
 }
+SPECIFICITY_WORDS = {
+    "cm", "day", "days", "hour", "hours", "inch", "inches",
+    "mile", "miles", "minute", "minutes", "month", "months", "week", "weeks",
+}
 _WORD_PATTERN = re.compile(r"[A-Za-z0-9']+")
 
 
@@ -55,6 +59,18 @@ def _extract_one(review_text: Any, rating: Any, verified_purchase: Any) -> dict[
         if word_count
         else 0.0
     )
+    bigrams_and_trigrams = [
+        tuple(words[index : index + size])
+        for size in (2, 3)
+        for index in range(max(word_count - size + 1, 0))
+    ]
+    phrase_counts = Counter(bigrams_and_trigrams)
+    repeated_phrase_ratio = (
+        sum(count - 1 for count in phrase_counts.values() if count > 1)
+        / len(bigrams_and_trigrams)
+        if bigrams_and_trigrams
+        else 0.0
+    )
     uppercase_letters = sum(character.isupper() for character in text if character.isalpha())
     letters = sum(character.isalpha() for character in text)
     rating_value = pd.to_numeric(pd.Series([rating]), errors="coerce").iloc[0]
@@ -70,7 +86,16 @@ def _extract_one(review_text: Any, rating: Any, verified_purchase: Any) -> dict[
         "exclamation_count": text.count("!"),
         "uppercase_ratio": uppercase_letters / letters if letters else 0.0,
         "promotional_keyword_count": sum(word in PROMOTIONAL_KEYWORDS for word in words),
+        "promotional_keyword_rate": (
+            sum(word in PROMOTIONAL_KEYWORDS for word in words) / max(word_count, 1)
+        ),
         "repeated_word_ratio": repeated_word_ratio,
+        "repeated_phrase_ratio": repeated_phrase_ratio,
+        "specificity_count": sum(
+            word in SPECIFICITY_WORDS or any(character.isdigit() for character in word)
+            for word in words
+        ),
+        "sentiment_score": (positive - negative) / max(word_count, 1),
         "sentiment_rating_mismatch": mismatch,
         "verified_purchase_numeric": _verified_numeric(verified_purchase),
     }

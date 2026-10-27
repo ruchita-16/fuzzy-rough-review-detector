@@ -260,21 +260,27 @@ def _render_methodology(model: FuzzyRoughHybridModel, synthetic: pd.DataFrame) -
     st.markdown(
         """
         **Fuzzy logic** represents gradual concepts with degrees from 0 to 1 rather than hard boundaries.
-        Review length, promotional language, repeated words, punctuation intensity, and rating-text mismatch
-        are fuzzified into interpretable sets. The rules combine suspicious signals; a short review by itself
-        adds no suspicion. A missing verified purchase adds only a small rule weight.
+        Review length, normalized promotional language, repeated words/phrases, punctuation intensity, and
+        rating-text mismatch are fuzzified into interpretable sets. Related repetition signals are combined
+        rather than simply added, and punctuation contributes only when paired with promotion. A short review
+        by itself adds no suspicion. A missing verified purchase adds only a small rule weight.
 
-        **Rough-set theory** groups reviews with identical discretized condition attributes. A group wholly
+        **Rough-set theory** groups reviews with identical discretized promotional rate, repeated-phrase ratio,
+        rating-text mismatch, and specificity conditions. A group wholly
         contained in Fake belongs to Fake's lower approximation; a group containing at least one Fake review
         belongs to its upper approximation. Mixed groups lie on the boundary. The rough membership is the
         fraction of Fake examples in the matching group. An unseen group is returned as `unknown`.
 
         **Hybrid score:** fuzzy suspicion is always retained. For matching groups of at least three examples,
         the score is 70% fuzzy score + 30% (100 × rough Fake membership). For smaller known groups, rough
-        weight falls to 10%; for unknown groups it is 0%. Categories use fixed score bands: below 35 is
-        Likely Genuine, 35–64.99 is Suspicious, and 65 or above is Likely Fake. These are decision bands,
-        not calibrated probabilities.
+        weight falls to 10%; for unknown groups it is 0%. The Likely Genuine and Likely Fake score cutoffs are
+        selected using internal grouped cross-validation on labeled training data only; the range between
+        them is Suspicious. These are decision bands, not calibrated probabilities.
         """
+    )
+    st.caption(
+        f"Current training-only decision cutoffs: Likely Genuine below "
+        f"{model.genuine_threshold:.0f}; Likely Fake at or above {model.fake_threshold:.0f}."
     )
     st.subheader("Worked example")
     example = synthetic.iloc[0].to_dict()
@@ -296,16 +302,62 @@ def _render_methodology(model: FuzzyRoughHybridModel, synthetic: pd.DataFrame) -
 def _render_evaluation(synthetic: pd.DataFrame) -> None:
     st.title("Model Evaluation")
     st.caption(
-        "Deterministic stratified 70/30 holdout. Every rough-set reference table is fitted only on its training "
-        "fold; test labels are used only after prediction for scoring."
+        "Deterministic grouped 70/30 holdout plus grouped stratified cross-validation. Each rough-set reference "
+        "table is fitted only on its training partition; held-out labels are used only for scoring."
     )
     result = evaluate_dataset(synthetic, test_fraction=0.3, seed=42)
+    class_metrics = result.get("metrics", {})
+    metric_names = ("precision", "recall", "f1")
+    macro_avg = result.get("macro_avg")
+    if macro_avg is None:
+        macro_avg = {
+            metric: sum(float(class_metrics.get(label, {}).get(metric, 0.0)) for label in ("Genuine", "Fake")) / 2
+            for metric in metric_names
+        }
+    weighted_avg = result.get("weighted_avg")
+    if weighted_avg is None:
+        supports = {
+            label: int(class_metrics.get(label, {}).get("support", 0))
+            for label in ("Genuine", "Fake")
+        }
+        total_support = sum(supports.values())
+        weighted_avg = {
+            metric: (
+                sum(
+                    float(class_metrics.get(label, {}).get(metric, 0.0)) * supports[label]
+                    for label in ("Genuine", "Fake")
+                )
+                / total_support
+                if total_support
+                else 0.0
+            )
+            for metric in metric_names
+        }
     st.warning("These educational results on synthetic examples are not representative of real-world performance.")
-    metric_columns = st.columns(4)
+    thresholds = result.get("decision_thresholds")
+    if thresholds is None:
+        thresholds = {
+            "likely_genuine_below": 35.0,
+            "likely_fake_at_or_above": 65.0,
+        }
+        st.caption(
+            "The active model returned the legacy fixed decision cutoffs: Likely Genuine below 35; "
+            "Likely Fake at or above 65. Restart Streamlit to load training-selected cutoffs."
+        )
+    else:
+        st.caption(
+            "Decision cutoffs were selected using only internal grouped folds of each training partition: "
+            f"Likely Genuine below {thresholds['likely_genuine_below']:.0f}; "
+            f"Likely Fake at or above {thresholds['likely_fake_at_or_above']:.0f}. "
+            "The held-out labels did not select the cutoffs."
+        )
+    metric_columns = st.columns(5)
     metric_columns[0].metric("Accuracy", f"{result['accuracy']:.1%}")
-    for index, label in enumerate(("Genuine", "Fake"), start=1):
-        metric_columns[index].metric(f"{label} precision", f"{result['metrics'][label]['precision']:.1%}")
-    metric_columns[3].metric("Test rows", result["test_size"])
+    fake_metrics = class_metrics.get("Fake", {})
+    metric_columns[1].metric("Fake precision", f"{fake_metrics.get('precision', 0.0):.1%}")
+    metric_columns[2].metric("Fake recall", f"{fake_metrics.get('recall', 0.0):.1%}")
+    metric_columns[3].metric("Fake F1", f"{fake_metrics.get('f1', 0.0):.1%}")
+    metric_columns[4].metric("Test rows", result["test_size"])
 
     matrix = result["confusion_matrix"]
     figure = go.Figure(
@@ -328,10 +380,58 @@ def _render_evaluation(synthetic: pd.DataFrame) -> None:
     figure.update_layout(title="Confusion matrix", xaxis_title="Prediction", yaxis_title="Ground truth")
     st.plotly_chart(figure, use_container_width=True)
     rows = []
-    for label, metrics in result["metrics"].items():
+    for label, metrics in class_metrics.items():
         rows.append({"class": label, **metrics})
+    rows.extend(
+        [
+            {"class": "Macro avg", **macro_avg},
+            {"class": "Weighted avg", **weighted_avg},
+        ]
+    )
     st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
-    st.write(f"**Overall accuracy:** {result['accuracy']:.3f}")
+    st.caption(
+        "Fake is the positive class for the displayed binary Fake metrics; only Likely Fake counts as a "
+        "positive prediction, so Suspicious is counted as a false negative for Fake recall. "
+        "Macro and support-weighted averages summarize the Genuine/Fake one-vs-rest metrics."
+    )
+    st.write(f"**Holdout macro F1:** {macro_avg['f1']:.3f}")
+    cross_validation = result.get("cross_validation")
+    if cross_validation and "summary" in cross_validation:
+        cv_summary = cross_validation["summary"]
+        st.subheader(f"{cross_validation['fold_count']}-fold grouped cross-validation")
+        st.caption(
+            "Each fold has a separately fitted rough-set reference table. Similar review texts are kept in one "
+            "partition. Mean ± standard deviation across folds illustrates how unstable estimates can be on a "
+            "small synthetic dataset."
+        )
+        cv_columns = st.columns(3)
+        cv_columns[0].metric(
+            "CV accuracy",
+            f"{cv_summary['accuracy_mean']:.1%} ± {cv_summary['accuracy_std']:.1%}",
+        )
+        cv_columns[1].metric(
+            "CV Fake F1",
+            f"{cv_summary['fake_f1_mean']:.1%} ± {cv_summary['fake_f1_std']:.1%}",
+        )
+        cv_columns[2].metric(
+            "CV Fake precision",
+            f"{cv_summary['fake_precision_mean']:.1%} ± {cv_summary['fake_precision_std']:.1%}",
+        )
+        st.dataframe(
+            pd.DataFrame(
+                [
+                    {"metric": name, "mean": cv_summary[f"{name}_mean"], "standard deviation": cv_summary[f"{name}_std"]}
+                    for name in ("accuracy", "macro_f1", "fake_precision", "fake_recall", "fake_f1")
+                ]
+            ),
+            use_container_width=True,
+            hide_index=True,
+        )
+    else:
+        st.info(
+            "This evaluation result was produced by an older model module, so cross-validation is unavailable. "
+            "Stop and restart Streamlit to load the updated evaluation code."
+        )
 
 
 def main() -> None:
@@ -346,6 +446,9 @@ def main() -> None:
         <style>
         .block-container {padding-top: 1.8rem; padding-bottom: 2rem; max-width: 1280px;}
         [data-testid="stMetric"] {background: #f4f7f9; padding: 14px; border-radius: 10px;}
+        [data-testid="stMetric"] [data-testid="stMetricLabel"],
+        [data-testid="stMetric"] [data-testid="stMetricValue"],
+        [data-testid="stMetric"] [data-testid="stMetricDelta"] {color: #1f2937 !important;}
         </style>
         """,
         unsafe_allow_html=True,
