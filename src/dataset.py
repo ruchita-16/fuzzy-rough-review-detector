@@ -1,0 +1,64 @@
+"""Synthetic educational review dataset and local file helpers."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pandas as pd
+
+
+_REVIEWS = [
+    ("R001", "Insulated Bottle", "Keeps water cold through my workday. The lid seals well, and the bottle fits the side pocket of my backpack.", 5, True, "Genuine"),
+    ("R002", "Wireless Earbuds", "Clear calls and comfortable fit for a one-hour commute. Bass is a little strong, but the case is compact.", 4, True, "Genuine"),
+    ("R003", "Desk Lamp", "The lamp is bright enough for reading and the arm stays in place. The touch control takes a couple of tries.", 4, False, "Genuine"),
+    ("R004", "Travel Backpack", "Used this bag on a weekend trip. The zippers feel sturdy and the laptop sleeve is useful, though the straps could be softer.", 4, True, "Genuine"),
+    ("R005", "Coffee Maker", "Simple to set up and makes a decent cup. The glass pot pours cleanly; brewing is slower than my old machine.", 4, True, "Genuine"),
+    ("R006", "Face Moisturizer", "Light texture and no strong scent. It worked fine under sunscreen, but the jar is smaller than I expected.", 4, False, "Genuine"),
+    ("R007", "Insulated Bottle", "Nice bottle. Easy to clean and it does not leak in my bag.", 5, True, "Genuine"),
+    ("R008", "Wireless Earbuds", "They pair quickly with my phone. The sound is okay for podcasts, but the left earbud feels loose when I walk.", 3, False, "Genuine"),
+    ("R009", "Desk Lamp", "Arrived with a small scratch on the base. It still works, has a useful warm setting, and was easy to assemble.", 3, True, "Genuine"),
+    ("R010", "Travel Backpack", "Good size for daily use. One inside pocket is awkwardly narrow, but the shoulder padding is comfortable.", 4, True, "Genuine"),
+    ("R011", "Coffee Maker", "Makes coffee as described. The water window is hard to read in a dim kitchen.", 3, False, "Genuine"),
+    ("R012", "Face Moisturizer", "My skin felt hydrated after a week, although the pump sometimes dispenses too much. No irritation so far.", 4, True, "Genuine"),
+    ("R013", "Insulated Bottle", "It keeps drinks cool for several hours. The cap has more parts to wash than I would like.", 4, False, "Genuine"),
+    ("R014", "Wireless Earbuds", "Comfortable for calls, less so for running. Battery lasted about four hours in my test.", 3, True, "Genuine"),
+    ("R015", "Desk Lamp", "Compact and bright.", 4, False, "Genuine"),
+    ("R016", "Travel Backpack", "The fabric feels thinner than pictured, but the bag held my books and lunch for a week without trouble.", 3, True, "Genuine"),
+    ("R017", "Coffee Maker", "Coffee was bitter even after changing the grind. The timer is convenient, but cleaning the basket is messy.", 2, True, "Genuine"),
+    ("R018", "Face Moisturizer", "The cream is pleasant and absorbs quickly; I cannot tell yet whether it helps with dry patches.", 4, False, "Genuine"),
+    ("R019", "Insulated Bottle", "Best bottle ever!!! Buy now!!! Amazing quality!!! Five stars!!!", 5, False, "Fake"),
+    ("R020", "Wireless Earbuds", "Perfect perfect perfect. Best sound ever!!! Must buy today!!!", 5, False, "Fake"),
+    ("R021", "Desk Lamp", "Excellent product. Excellent seller. Excellent quality. Everyone needs this amazing lamp!", 5, False, "Fake"),
+    ("R022", "Travel Backpack", "This is the best bag I have ever owned. Buy it now, you will love it, guaranteed!", 5, True, "Fake"),
+    ("R023", "Coffee Maker", "The coffee maker is terrible and stopped heating after two days. I would not recommend it.", 5, False, "Fake"),
+    ("R024", "Face Moisturizer", "Five stars, flawless results, amazing formula!!! Buy buy buy, best product on the market!!!", 1, False, "Fake"),
+    ("R025", "Insulated Bottle", "Amazing amazing amazing!!! Perfect quality!!! Buy now!!!", 5, True, "Fake"),
+    ("R026", "Wireless Earbuds", "Awful sound and the battery dies quickly. This is a five star product and the best deal ever.", 1, False, "Fake"),
+    ("R027", "Desk Lamp", "Works great. Works great. Works great. Absolutely perfect!!!", 5, False, "Fake"),
+    ("R028", "Travel Backpack", "I received this yesterday and have not used it yet, but it is the greatest backpack ever made. Buy today!", 5, True, "Fake"),
+    ("R029", "Coffee Maker", "The machine leaks from the bottom and tastes burnt. Five stars, excellent product, highly recommend!!!", 1, False, "Fake"),
+    ("R030", "Face Moisturizer", "Really nice texture and a mild scent. The product is okay, though I have only tried it twice.", 1, True, "Fake"),
+]
+
+COLUMNS = [
+    "review_id",
+    "product_name",
+    "review_text",
+    "rating",
+    "verified_purchase",
+    "review_label",
+]
+
+
+def generate_synthetic_dataset() -> pd.DataFrame:
+    """Return a fresh copy of the fixed 30-row educational dataset."""
+    return pd.DataFrame(_REVIEWS, columns=COLUMNS)
+
+
+def ensure_dataset(path: str | Path) -> Path:
+    """Create the synthetic CSV only when the requested file does not exist."""
+    dataset_path = Path(path)
+    if not dataset_path.exists():
+        dataset_path.parent.mkdir(parents=True, exist_ok=True)
+        generate_synthetic_dataset().to_csv(dataset_path, index=False)
+    return dataset_path
